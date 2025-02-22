@@ -1,0 +1,14 @@
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.GeneratedMSBuildEditorConfig.editorconfig
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.AssemblyInfoInputs.cache
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.AssemblyInfo.cs
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.csproj.CoreCompileInputs.cache
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/bin/Debug/net9.0/WebProxy
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/bin/Debug/net9.0/WebProxy.deps.json
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/bin/Debug/net9.0/WebProxy.runtimeconfig.json
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/bin/Debug/net9.0/WebProxy.dll
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/bin/Debug/net9.0/WebProxy.pdb
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.dll
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/refint/WebProxy.dll
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.pdb
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.genruntimeconfig.cache
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/ref/WebProxy.dll
