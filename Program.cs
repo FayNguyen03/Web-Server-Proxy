@@ -21,6 +21,10 @@ namespace WebProxy{
             StartProxy();
         }
 
+        static void ClosingClient(TcpClient client){
+            Console.WriteLine($"\nClose the Client");
+            client.Close();
+        }
         static void StartProxy()
         {
             
@@ -43,7 +47,7 @@ namespace WebProxy{
                 //Read the HTTP request
                 string requestLine = await reader.ReadLineAsync();
                 if (string.IsNullOrEmpty(requestLine)){
-                    client.Close();
+                    ClosingClient(client);
                     return;
                 }
                 Console.WriteLine($"\nReceived Request: {requestLine}");
@@ -52,7 +56,7 @@ namespace WebProxy{
                 string[] requestParts = requestLine.Split(' ');
                 if (requestParts.Length < 2){
                     Console.WriteLine("Invalid Request");
-                    client.Close();
+                    ClosingClient(client);
                     return;
                 }
 
@@ -71,7 +75,23 @@ namespace WebProxy{
                 Console.WriteLine($"URL: {url}");
                 Console.WriteLine("Headers:\n" + headers);
 
-                client.Close();
+                //Forward request to the actual web server
+                try{
+                    HttpRequestMessage forwardRes = new HttpRequestMessage(new HttpMethod(method), url);
+                    HttpResponseMessage serverRes = await httpClient.SendAsync(forwardRes);
+
+                    //Response content 
+                    byte[] responseBytes = await serverRes.Content.ReadAsByteArrayAsync();
+
+                }
+                catch (Exception ex){
+                    Console.WriteLine($"Error forwarding request: {ex.Message}";
+                    writer.WriteLine("HTTP/1.1 500 Internal Server Error"));
+                    writer.WriteLine("Content-Type: text/plain");
+                    writer.WriteLine();
+                    writer.WriteLine("Proxy server error");
+                }
+                ClosingClient(client);
             }
         }
     

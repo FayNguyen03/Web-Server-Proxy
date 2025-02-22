@@ -12,3 +12,4 @@
 /Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.pdb
 /Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.genruntimeconfig.cache
 /Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/ref/WebProxy.dll
+/Users/faynguyen03/Documents/TCD/NETWORK/WebProxy/obj/Debug/net9.0/WebProxy.sourcelink.json
