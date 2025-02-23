@@ -49,7 +49,8 @@ namespace WebProxy{
 
             while(true){
                 TcpClient client = listener.AcceptTcpClient();
-                Task.Run(() => HandleClient(client));
+                Thread thread = new Thread(() => HandleClient(client));
+                thread.Start();
             }
         }
 
@@ -75,7 +76,7 @@ namespace WebProxy{
                 }
 
                 string method = requestParts[0];
-                string url = requestParts[1];
+                string url = Normalize(requestParts[1]);
 
                 //Reading the headers
                 /*string headers = "";
@@ -85,6 +86,16 @@ namespace WebProxy{
                     headers += line + "\n";
                 }
                 */
+
+                if (Globals.blockedURLS.Contains(url)){
+                    Console.WriteLine($"Urgh Oh! {url} is blocked!");
+                    string response = "HTTP/1.1 403 Forbidden";
+                    byte[] responseBytes = Encoding.UTF8.GetBytes(response);
+                    
+                    await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+                    ClosingClient(client);
+                    return;
+                }
 
                 Console.WriteLine($"Method: {method}");
                 Console.WriteLine($"URL: {url}");
@@ -145,7 +156,20 @@ namespace WebProxy{
                 ClosingClient(client);
             }
         }
-    
+
+        static string Normalize(string url){
+            Uri uri;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out uri)){
+                Console.WriteLine("Invalid URL Format");
+                return url;
+            }
+            if ((uri.Scheme == "http" && uri.Port == 80) || (uri.Scheme == "https" && uri.Port == 443))
+            {
+                return $"{uri.Scheme}://{uri.Host}{uri.PathAndQuery}";
+            }
+            return uri.ToString();
+        }   
+
         static void ConsoleCommand(string command){
             if (command.ToUpper() == "list" || command == "l" ){
                 if (Globals.blockedURLS.Count == 0){

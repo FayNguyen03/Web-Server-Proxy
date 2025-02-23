@@ -37,3 +37,5 @@ static void StartProxy() {
 
 - Each connection handled asynchronously using `Task.Run()` to process multiple requests concurrently
 
+- Block: normalize the url
+
