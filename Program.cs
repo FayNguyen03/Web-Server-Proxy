@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using System.Net.Http;
+using System.Collections.Generic;
 
 
 namespace WebProxy{
@@ -14,11 +15,24 @@ namespace WebProxy{
         public static readonly HttpClient httpClient = new HttpClient();
 
         public static Encoding ascii = Encoding.ASCII;
+
+        //blocked URL set
+        public static HashSet<string> blockedURLS = new HashSet<string>();
     }
     internal static class Program
     {
         static void Main(){
-            StartProxy();
+            
+            //Proxy in a seperate thread
+            Thread proxyThread = new Thread(StartProxy);
+            proxyThread.Start();
+            
+            while(true){
+                Console.WriteLine("Enter URL block commands (block - B, unblock - U, list - L): ");
+                string command = Console.ReadLine();
+                ConsoleCommand(command);
+            }
+            
         }
 
         static void ClosingClient(TcpClient client){
@@ -132,5 +146,40 @@ namespace WebProxy{
             }
         }
     
+        static void ConsoleCommand(string command){
+            if (command.ToUpper() == "list" || command == "l" ){
+                if (Globals.blockedURLS.Count == 0){
+                    Console.WriteLine("Empty List of Blocked URLs");
+                    return;
+                }
+                Console.WriteLine("List of Blocked URLs:");
+                foreach (string blockedUrl in Globals.blockedURLS){
+                    Console.WriteLine(blockedUrl);
+                }
+                return;
+            }
+            string[] parts = command.Split(" ", 2);
+
+            if (parts.Length < 2){
+                Console.WriteLine("Invalid command. Use: block/b [URL] or unblock/u [URL]");
+                return;
+            }
+
+            string action = parts[0].ToLower();
+            string url = parts[1];
+
+            if (action.ToLower() == "block" || action.ToLower() == "b" ){
+                Globals.blockedURLS.Add(url);
+                Console.WriteLine($"{url} Blocked");
+            }
+            else if (action.ToLower()  == "unblock" || action.ToLower()  == "u"){ 
+                Globals.blockedURLS.Remove(url);
+                Console.WriteLine($"{url} Unblocked");
+            }
+            else{
+                Console.WriteLine("Invalid Command");
+            }
+
+        }
     }
 }
