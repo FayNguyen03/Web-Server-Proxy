@@ -6,18 +6,25 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Net.Http;
 using System.Collections.Generic;
+using System.Net.Http.Headers;
 
 
 namespace WebProxy{
     public static class Globals
     {
-        public const Int32 PORT_NUMBER = 3000;
+        public const Int32 PORT_NUMBER = 4000;
         public static readonly HttpClient httpClient = new HttpClient();
 
         public static Encoding ascii = Encoding.ASCII;
 
         //blocked URL set
         public static HashSet<string> blockedURLS = new HashSet<string>();
+
+        public static Dictionary<string, (DateTime, byte[])> cache = new Dictionary<string, (DateTime, byte[])>();
+
+        public static DateTime start;
+
+        public static DateTime end;
     }
     internal static class Program
     {
@@ -30,7 +37,9 @@ namespace WebProxy{
             while(true){
                 Console.WriteLine("Enter URL block commands (block - B, unblock - U, list - L): ");
                 string command = Console.ReadLine();
-                ConsoleCommand(command);
+                if (!string.IsNullOrEmpty(command)){
+                    ConsoleCommand(command);
+                }
             }
             
         }
@@ -49,8 +58,10 @@ namespace WebProxy{
 
             while(true){
                 TcpClient client = listener.AcceptTcpClient();
-                Thread thread = new Thread(() => HandleClient(client));
-                thread.Start();
+                //Thread thread = new Thread(() => HandleClient(client));
+                //thread.Start();
+                ThreadPool.QueueUserWorkItem(state => HandleClient(client));
+                //Using threadpool can be more efficient since this reuses threads instead of creating a new thread/request
             }
         }
 
@@ -78,15 +89,6 @@ namespace WebProxy{
                 string method = requestParts[0];
                 string url = Normalize(requestParts[1]);
 
-                //Reading the headers
-                /*string headers = "";
-                string line;
-
-                while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync())){
-                    headers += line + "\n";
-                }
-                */
-
                 if (Globals.blockedURLS.Contains(url)){
                     Console.WriteLine($"Urgh Oh! {url} is blocked!");
                     string response = "HTTP/1.1 403 Forbidden";
@@ -99,8 +101,28 @@ namespace WebProxy{
 
                 Console.WriteLine($"Method: {method}");
                 Console.WriteLine($"URL: {url}");
-                //Console.WriteLine("Headers:\n" + headers);
-                
+            
+                //Check Cache before Fetching
+                if (method == "GET" && Globals.cache.ContainsKey(url)){
+                    Globals.start = DateTime.Now;
+                    var (timestamp, cachedData) = Globals.cache[url];
+
+                    //Expire cache after 1 minute
+                    if((DateTime.Now - timestamp).TotalMinutes < 1){
+                        
+                        Console.WriteLine($"[CACHE HIT] {url}");
+                        clientStream.Write(cachedData, 0, cachedData.Length);
+                        Globals.end = DateTime.Now;
+                        Console.WriteLine($"[CACHE TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms");
+                        ClosingClient(client);
+                        return;
+                    }
+                    else{
+                        Globals.cache.Remove(url);
+                    }
+
+                }
+
                 //Handle HTTPS CONNECT requests
                 if (method.ToUpper() == "CONNECT"){
                     string[] hostParts = url.Split(":");
@@ -117,8 +139,8 @@ namespace WebProxy{
                         await writer.WriteLineAsync("Proxy-Agent: C# Proxy");
                         await writer.WriteLineAsync(); // End headers
 
-                        // Relay encrypted traffic
-                        await Task.WhenAny(
+                        // Relay encrypted traffic; Ensure both directions (client -> server and server -> client_ run) until the connection closes)
+                        await Task.WhenAll(
                             clientStream.CopyToAsync(serverStream),
                             serverStream.CopyToAsync(clientStream)
                         );
@@ -134,11 +156,19 @@ namespace WebProxy{
                     HttpResponseMessage serverRes = await Globals.httpClient.SendAsync(forwardRes);
 
                     //Response content 
+                    Globals.start = DateTime.Now;
                     byte[] responseBytes = await serverRes.Content.ReadAsByteArrayAsync();
+                    Globals.end = DateTime.Now;
+
+                    Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms");
+
+                    if (responseBytes != null){
+                        Globals.cache[url] = (DateTime.Now, responseBytes);
+                    }
 
                     //Send response headers
-                    writer.WriteLine($"HTTP/1.1 {(int)serverRes.StatusCode} {serverRes.ReasonPhrase}");
                     foreach (var header in serverRes.Headers){
+                        forwardRes.Headers.TryAddWithoutValidation(header.Key, header.Value);
                         writer.WriteLine($"{header.Key}: {string.Join(",", header.Value)}");
                         writer.WriteLine();
                     }
