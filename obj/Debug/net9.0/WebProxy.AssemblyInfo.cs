@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WebProxy")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e4e9ede3030e0586169826bdb84cec965a152e68")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+36cdad006697c53e31b70d8cd7abec4ac7175562")]
 [assembly: System.Reflection.AssemblyProductAttribute("WebProxy")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WebProxy")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
