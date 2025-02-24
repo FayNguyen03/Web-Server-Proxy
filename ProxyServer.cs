@@ -78,8 +78,10 @@ namespace WebProxy{
                 Console.WriteLine($"Method: {method}");
                 Console.WriteLine($"URL: {url}");
             
-                bool cachedUrl = await CacheFetching(method, url, client, clientStream);
+                bool cachedUrl = await CacheFetching(method, url, writer, clientStream);
                 if (cachedUrl){
+                    ClosingClient(client);
+                    Console.WriteLine("[DEBUG] Cached Data Successfully!");
                     return;
                 }
 
@@ -116,24 +118,24 @@ namespace WebProxy{
                 string[] hostParts = url.Split(":");
 
                 string host = hostParts[0].Split('/')[0];
-                int port = hostParts.Length > 2 ? int.Parse(hostParts[1]) : 443;
+                int port = hostParts.Length > 1 ? int.Parse(hostParts[1]) : 443;
 
                 Console.WriteLine($"[DEBUG] Host: {host}, Port: {port}");
+                
                 TcpClient server = new TcpClient(host, port);
                 NetworkStream serverStream = server.GetStream();
-                {
-                    // Send "200 Connection Established" response to the client
-                    await writer.WriteLineAsync("HTTP/1.1 200 Connection Established");
-                    //await writer.WriteLineAsync("Proxy-Agent: C# Proxy");
-                    await writer.WriteLineAsync(); 
+                
+                // Send "200 Connection Established" response to the client
+                await writer.WriteLineAsync("HTTP/1.1 200 Connection Established");
+                //await writer.WriteLineAsync("Proxy-Agent: C# Proxy");
+                await writer.WriteLineAsync(); 
 
-                    // Relay encrypted traffic; Ensure both directions (client -> server and server -> client_ run) until the connection closes)
-                    await Task.WhenAll(
-                        clientStream.CopyToAsync(serverStream),
-                        serverStream.CopyToAsync(clientStream)
-                    );
+                // Relay encrypted traffic; Ensure both directions (client -> server and server -> client_ run) until the connection closes)
+                await Task.WhenAll(
+                    clientStream.CopyToAsync(serverStream),
+                    serverStream.CopyToAsync(clientStream)
+                );
 
-                }
                 Console.WriteLine($"[DEBUG] HTTPS CONNECT succeeded");
             }
             catch(Exception ex){
@@ -141,6 +143,7 @@ namespace WebProxy{
             }
         }
 
+               
         private static async Task ForwardRequestToServer(string method, string url, NetworkStream clientStream, StreamWriter writer){
             try{
                 HttpRequestMessage forwardRes = new HttpRequestMessage(new HttpMethod(method), url);
@@ -151,26 +154,14 @@ namespace WebProxy{
                 byte[] responseBytes = await serverRes.Content.ReadAsByteArrayAsync();
                 Globals.end = DateTime.Now;
 
-                Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms");
+                Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the server.");
 
                 if (responseBytes != null){
                     Globals.cache[url] = (DateTime.Now, responseBytes);
-                    Console.WriteLine("Add to Cache");
+                    Console.WriteLine("[DEBUG] Add to Cache");
                 }
 
-                //Send response headers
-                foreach (var header in serverRes.Headers){
-                   
-                    await writer.WriteLineAsync($"{header.Key}: {string.Join(", ", header.Value)}");
-                }
-                
-                Console.WriteLine("Done with the header");
-                await writer.WriteLineAsync();
-                await writer.FlushAsync();
-
-                Console.WriteLine("Start sending the response body");
-                //Send response body
-                await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+                SendResponse(responseBytes, serverRes, clientStream, writer);
 
                 }
             catch (Exception ex){
@@ -181,18 +172,53 @@ namespace WebProxy{
                 writer.WriteLine("Proxy server error");
             }
         }     
+    
+        private static async Task SendResponse(byte[] responseBytes, HttpResponseMessage serverRes, NetworkStream clientStream, StreamWriter writer)
+        {
+            try
+            {
+                // **Send HTTP status line**
+                await writer.WriteLineAsync($"HTTP/{serverRes.Version} {(int)serverRes.StatusCode} {serverRes.ReasonPhrase}");
+                
+                //Send response headers
+                foreach (var header in serverRes.Headers){
+                   
+                    await writer.WriteLineAsync($"{header.Key}: {string.Join(", ", header.Value)}");
+                }
+                
+                Console.WriteLine("[DEBUG] Done with the header");
 
-        static async Task<bool> CacheFetching(string method, string url, TcpClient client, NetworkStream clientStream){
+                await writer.WriteLineAsync();
+                await writer.FlushAsync();
+
+                Console.WriteLine("[DEBUG] Start sending the response body");
+                //Send response body
+                await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error sending response to the client server: {ex.Message}");
+                await writer.WriteLineAsync("HTTP/1.1 500 Internal Server Error");
+                await writer.WriteLineAsync("Content-Type: text/plain");
+                await writer.WriteLineAsync();
+                await writer.WriteLineAsync("Proxy server error");
+            }
+        }
+        
+        static async Task<bool> CacheFetching(string method, string url, StreamWriter writer, NetworkStream clientStream){
             //Check Cache before Fetching
+            HttpRequestMessage forwardRes = new HttpRequestMessage(new HttpMethod(method), url);
+            HttpResponseMessage serverRes = await Globals.httpClient.SendAsync(forwardRes);
+
                 if (method == "GET" && Globals.cache.ContainsKey(url)){
                     Globals.start = DateTime.Now;
                     var (timestamp, cachedData) = Globals.cache[url];
 
                     //Expire cache after 1 minute
-                    if((DateTime.Now - timestamp).TotalMinutes < 1){
+                    if((DateTime.Now - timestamp).TotalMinutes < 10){
                         
                         Console.WriteLine($"[CACHE HIT] {url}");
-                        clientStream.Write(cachedData, 0, cachedData.Length);
+                        SendResponse(cachedData, serverRes, clientStream, writer);
                         Globals.end = DateTime.Now;
                         Console.WriteLine($"[CACHE TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms");
                         return true;
@@ -205,7 +231,7 @@ namespace WebProxy{
         }
         
         static async Task ClosingClient(TcpClient client){
-            await Task.Delay(TimeSpan.FromMinutes(2));
+            await Task.Delay(TimeSpan.FromMilliseconds(2));
             Console.WriteLine($"\nClose the Client");
             client.Close();
         }
