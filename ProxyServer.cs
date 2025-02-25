@@ -88,7 +88,7 @@ namespace WebProxy{
                 //Handle HTTPS CONNECT requests
                 if (url.StartsWith("https://")){
                     await HandleHttpsConnect(url, clientStream, writer, client);
-                    await ForwardRequestToServer(method, url, clientStream, writer);
+                    //await ForwardRequestToServer(method, url, clientStream, writer);
                 }
                 else if (url.StartsWith("http://")){
                 //Forward request to the actual web server
@@ -134,8 +134,10 @@ namespace WebProxy{
                             await writer.WriteLineAsync("HTTP/1.1 200 Connection Established");
                             await writer.FlushAsync();
                             Console.WriteLine($"[INFO] HTTPS Tunnel Established to {host}:{port}");
-                            await ManualPipeServerToClient(serverStream, clientStream, writer);
-                        }
+                            Task clientToServer = PipeDataAsync(clientStream,serverStream);
+                            Task serverToClient = PipeDataAsync(serverStream, clientStream);
+                            await Task.WhenAll(clientToServer, serverToClient);
+                                              }
                     }
                     catch (SocketException se)
                     {
@@ -289,32 +291,20 @@ namespace WebProxy{
             }
         }
 
-        private static async Task ManualPipeServerToClient(NetworkStream serverStream, NetworkStream clientStream, StreamWriter writer)
+        private static async Task PipeDataAsync(NetworkStream input, NetworkStream output)
         {
-            const int BUFFER_SIZE = 65536;
-            byte[] buffer = new byte[BUFFER_SIZE];
-            MemoryStream responseStream = new MemoryStream();
+            byte[] buffer = new byte[8192];
             int bytesRead;
-            
-            serverStream.ReadTimeout = 10000; 
             try
             {
-                // Read from the server and store data
-                while ((bytesRead = await serverStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                while ((bytesRead = await input.ReadAsync(buffer, 0, buffer.Length)) > 0)
                 {
-                    responseStream.Write(buffer, 0, bytesRead);
+                    await output.WriteAsync(buffer, 0, bytesRead);
                 }
-
-                
-                byte[] responseBytes = responseStream.ToArray();
-
-                HttpResponseMessage serverRes = ParseHttpResponse(responseBytes);
-
-                await pasteResponse(responseBytes, serverRes, clientStream, writer);
             }
-            catch (IOException ioex)
+            catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Connection closed unexpectedly: {ioex.Message}");
+                Console.WriteLine($"[ERROR] Data Pipe Error: {ex.Message}");
             }
         }
 
