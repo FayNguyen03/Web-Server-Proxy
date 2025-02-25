@@ -86,13 +86,18 @@ namespace WebProxy{
                 }
 
                 //Handle HTTPS CONNECT requests
-                if ((method.ToUpper() == "CONNECT" || method.ToUpper() == "GET") && url[4] == 's'){
-                    await HandleHttpsConnect(url, clientStream, writer);
+                if (url.StartsWith("https://")){
+                    await HandleHttpsConnect(url, clientStream, writer, client);
+                    await ForwardRequestToServer(method, url, clientStream, writer);
                 }
-                Console.WriteLine("Done with HTTPS Connect");
+                else if (url.StartsWith("http://")){
                 //Forward request to the actual web server
-                await ForwardRequestToServer(method, url, clientStream, writer);
-                Console.WriteLine("Done with HTTP Request");
+                    await ForwardRequestToServer(method, url, clientStream, writer);
+                }
+                else{
+                    Console.WriteLine("[ERROR] Unsupported HTTP method.");
+                    await writer.WriteLineAsync("HTTP/1.1 405 Method Not Allowed\r\n\r\n");
+                }
             }   
             catch (Exception ex){
                 Console.WriteLine($"[ERROR] {ex.Message}");
@@ -102,47 +107,54 @@ namespace WebProxy{
             }
         }
              
-        private static async Task HandleHttpsConnect(string url, NetworkStream clientStream, StreamWriter writer){
-            try{
-
-                //Remove the scheme
-                if (url.StartsWith("https://"))
-                {
-                    url = url.Substring(8);
-                }
-                else if (url.StartsWith("http://"))
-                {
-                    url = url.Substring(7);
-                }
-
-                string[] hostParts = url.Split(":");
-
-                string host = hostParts[0].Split('/')[0];
-                int port = hostParts.Length > 1 ? int.Parse(hostParts[1]) : 443;
-
-                Console.WriteLine($"[DEBUG] Host: {host}, Port: {port}");
+        private static async Task HandleHttpsConnect(string url, NetworkStream clientStream, StreamWriter writer, TcpClient client)
+        {
+            try
+            {
+                //Console.WriteLine($"[DEBUG] {url}");
                 
-                TcpClient server = new TcpClient(host, port);
-                NetworkStream serverStream = server.GetStream();
-                
-                // Send "200 Connection Established" response to the client
-                await writer.WriteLineAsync("HTTP/1.1 200 Connection Established");
-                //await writer.WriteLineAsync("Proxy-Agent: C# Proxy");
-                await writer.WriteLineAsync(); 
+                string newUrl = url.Remove(0,8);
+                //Console.WriteLine($"[DEBUG] {newUrl}");
+                string[] hostParts = newUrl.Split("/");
+            
+                string host = hostParts[0]; 
 
-                // Relay encrypted traffic; Ensure both directions (client -> server and server -> client_ run) until the connection closes)
-                await Task.WhenAll(
-                    clientStream.CopyToAsync(serverStream),
-                    serverStream.CopyToAsync(clientStream)
-                );
+                int port = 443; // Default to 443 for HTTPS
+
+                Console.WriteLine($"[DEBUG] Extracted Host: {host}, Port: {port}");
+
+                
+                using (TcpClient server = new TcpClient())
+                {
+                    try
+                    {
+                        await server.ConnectAsync(host, port);
+                        using (NetworkStream serverStream = server.GetStream())
+                        {
+                            await writer.WriteLineAsync("HTTP/1.1 200 Connection Established");
+                            await writer.FlushAsync();
+                            Console.WriteLine($"[INFO] HTTPS Tunnel Established to {host}:{port}");
+                            await ManualPipeServerToClient(serverStream, clientStream, writer);
+                        }
+                    }
+                    catch (SocketException se)
+                    {
+                        Console.WriteLine($"[ERROR] Could not connect to {host}: {se.Message}");
+                        await writer.WriteLineAsync("HTTP/1.1 502 Bad Gateway");
+                    }
+                }
 
                 Console.WriteLine($"[DEBUG] HTTPS CONNECT succeeded");
             }
-            catch(Exception ex){
+            catch (Exception ex)
+            {
                 Console.WriteLine($"[ERROR] HTTPS CONNECT failed: {ex.Message}");
+                await writer.WriteLineAsync("HTTP/1.1 502 Bad Gateway");
+                await writer.WriteLineAsync("Content-Type: text/plain");
+                await writer.WriteLineAsync();
+                await writer.WriteLineAsync("Proxy server error: Unable to connect to target server.");
             }
         }
-
                
         private static async Task ForwardRequestToServer(string method, string url, NetworkStream clientStream, StreamWriter writer){
             try{
@@ -156,12 +168,12 @@ namespace WebProxy{
 
                 Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the server.");
 
-                if (responseBytes != null){
+                if (responseBytes != null && url.StartsWith("http://")){
                     Globals.cache[url] = (DateTime.Now, responseBytes);
                     Console.WriteLine("[DEBUG] Add to Cache");
                 }
 
-                SendResponse(responseBytes, serverRes, clientStream, writer);
+                await pasteResponse(responseBytes, serverRes, clientStream, writer);
 
                 }
             catch (Exception ex){
@@ -173,26 +185,25 @@ namespace WebProxy{
             }
         }     
     
-        private static async Task SendResponse(byte[] responseBytes, HttpResponseMessage serverRes, NetworkStream clientStream, StreamWriter writer)
+        private static async Task pasteResponse(byte[] responseBytes, HttpResponseMessage serverRes, NetworkStream clientStream, StreamWriter writer)
         {
             try
             {
                 // **Send HTTP status line**
                 await writer.WriteLineAsync($"HTTP/{serverRes.Version} {(int)serverRes.StatusCode} {serverRes.ReasonPhrase}");
-                
+                if (serverRes.Content.Headers.ContentType != null)
+                {
+                    await writer.WriteLineAsync($"Content-Type: {serverRes.Content.Headers.ContentType}");
+                }
                 //Send response headers
                 foreach (var header in serverRes.Headers){
                    
                     await writer.WriteLineAsync($"{header.Key}: {string.Join(", ", header.Value)}");
                 }
-                
-                Console.WriteLine("[DEBUG] Done with the header");
 
                 await writer.WriteLineAsync();
                 await writer.FlushAsync();
 
-                Console.WriteLine("[DEBUG] Start sending the response body");
-                //Send response body
                 await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
             }
             catch (Exception ex)
@@ -218,7 +229,7 @@ namespace WebProxy{
                     if((DateTime.Now - timestamp).TotalMinutes < 10){
                         
                         Console.WriteLine($"[CACHE HIT] {url}");
-                        SendResponse(cachedData, serverRes, clientStream, writer);
+                        await pasteResponse(cachedData, serverRes, clientStream, writer);
                         Globals.end = DateTime.Now;
                         Console.WriteLine($"[CACHE TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms");
                         return true;
@@ -235,5 +246,77 @@ namespace WebProxy{
             Console.WriteLine($"\nClose the Client");
             client.Close();
         }
+
+        private static HttpResponseMessage ParseHttpResponse(byte[] responseBytes)
+        {
+            using (var memoryStream = new MemoryStream(responseBytes))
+            using (var reader = new StreamReader(memoryStream))
+            {
+                string statusLine = reader.ReadLine();
+                if (string.IsNullOrWhiteSpace(statusLine))
+                {
+                    throw new Exception("Invalid response from server.");
+                }
+
+                // Parse status line (e.g., HTTP/1.1 200 OK)
+                string[] statusParts = statusLine.Split(' ');
+                if (statusParts.Length < 3)
+                {
+                    throw new Exception("Malformed status line in server response.");
+                }
+
+                HttpResponseMessage response = new HttpResponseMessage
+                {
+                    StatusCode = (HttpStatusCode)int.Parse(statusParts[1]),
+                    Version = new Version(1, 1) // Default to HTTP/1.1
+                };
+
+                // Read headers
+                while (true)
+                {
+                    string headerLine = reader.ReadLine();
+                    if (string.IsNullOrWhiteSpace(headerLine))
+                        break; // End of headers
+
+                    string[] headerParts = headerLine.Split(new[] { ':' }, 2);
+                    if (headerParts.Length == 2)
+                    {
+                        response.Headers.TryAddWithoutValidation(headerParts[0].Trim(), headerParts[1].Trim());
+                    }
+                }
+
+                return response;
+            }
+        }
+
+        private static async Task ManualPipeServerToClient(NetworkStream serverStream, NetworkStream clientStream, StreamWriter writer)
+        {
+            const int BUFFER_SIZE = 65536;
+            byte[] buffer = new byte[BUFFER_SIZE];
+            MemoryStream responseStream = new MemoryStream();
+            int bytesRead;
+            
+            serverStream.ReadTimeout = 10000; 
+            try
+            {
+                // Read from the server and store data
+                while ((bytesRead = await serverStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    responseStream.Write(buffer, 0, bytesRead);
+                }
+
+                
+                byte[] responseBytes = responseStream.ToArray();
+
+                HttpResponseMessage serverRes = ParseHttpResponse(responseBytes);
+
+                await pasteResponse(responseBytes, serverRes, clientStream, writer);
+            }
+            catch (IOException ioex)
+            {
+                Console.WriteLine($"[ERROR] Connection closed unexpectedly: {ioex.Message}");
+            }
+        }
+
     }
 }
