@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Net.Http;
 using System.Collections.Generic;
 using System.Net.Http.Headers;
+using System.Collections.Concurrent;
 
 
 namespace WebProxy{
@@ -20,11 +21,15 @@ namespace WebProxy{
         //blocked URL set
         public static HashSet<string> blockedURLS = new HashSet<string>();
 
-        public static Dictionary<string, (DateTime, byte[])> cache = new Dictionary<string, (DateTime, byte[])>();
+        //public static Dictionary<string, (DateTime, byte[])> cache = new Dictionary<string, (DateTime, byte[])>();
+        public static ConcurrentDictionary<string, (DateTime, byte[])> cache = new ConcurrentDictionary<string, (DateTime, byte[])>();
+
 
         public static DateTime start;
 
         public static DateTime end;
+
+        public static string lastHost = "";
     }
     
 }

@@ -17,7 +17,7 @@ namespace WebProxy{
         {
             while (true)
             {
-                Console.WriteLine("\nEnter URL commands (block - B, unblock - U, list - L): ");
+                Console.WriteLine("\nAvailable Commands - Enter URL commands (block - B, unblock - U, list - L): ");
                 string command = Console.ReadLine();
                 if (!string.IsNullOrEmpty(command))
                 {
