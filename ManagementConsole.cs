@@ -1,23 +1,27 @@
 using System;
-using System.IO;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
-using System.Threading.Tasks;
 using System.Net.Http;
+using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Net.Http.Headers;
+using System.Net;
+using System.IO;
 
-
-namespace WebProxy{
+namespace WebProxy
+{
     internal class ManagementConsole
     {
-        
+        private static readonly HttpClient client = Globals.httpClient;
+
         public void Run()
         {
             while (true)
             {
-                Console.WriteLine("\nAvailable Commands - Enter URL commands (block - B, unblock - U, list - L): ");
+                Console.WriteLine("\nCONSOLE MANAGEMENT (Click Enter to show the console)");
+                Console.WriteLine("\nAvailable Commands: ");
+                Console.WriteLine(" - Block URL (block/b [URL])");
+                Console.WriteLine(" - Unblock URL (unblock/u [URL])");
+                Console.WriteLine(" - List Blocked URLs (list/l)");
+                Console.WriteLine("Enter Command: ");
+
                 string command = Console.ReadLine();
                 if (!string.IsNullOrEmpty(command))
                 {
@@ -26,40 +30,84 @@ namespace WebProxy{
             }
         }
 
-        void ConsoleCommand(string command){
-            if (command.ToUpper() == "list" || command == "l" ){
-                if (Globals.blockedURLS.Count == 0){
-                    Console.WriteLine("Empty List of Blocked URLs");
-                    return;
-                }
-                Console.WriteLine("List of Blocked URLs:");
-                foreach (string blockedUrl in Globals.blockedURLS){
-                    Console.WriteLine(blockedUrl);
-                }
-                return;
-            }
-            string[] parts = command.Split(" ", 2);
+        async void ConsoleCommand(string command)
+        {
+            string[] parts = command.Split(" ", 3, StringSplitOptions.RemoveEmptyEntries);
 
-            if (parts.Length < 2){
-                Console.WriteLine("Invalid command. Use: block/b [URL] or unblock/u [URL]");
+            if (parts.Length == 0)
+            {
+                Console.WriteLine("Invalid command. Try again.");
                 return;
             }
 
             string action = parts[0].ToLower();
-            string url = parts[1];
 
-            if (action.ToLower() == "block" || action.ToLower() == "b" ){
-                Globals.blockedURLS.Add(url);
-                Console.WriteLine($"{url} Blocked");
-            }
-            else if (action.ToLower()  == "unblock" || action.ToLower()  == "u"){ 
-                Globals.blockedURLS.Remove(url);
-                Console.WriteLine($"{url} Unblocked");
-            }
-            else{
-                Console.WriteLine("Invalid Command");
-            }
+            switch (action)
+            {
+                case "list":
+                case "l":
+                    ListBlockedURLs();
+                    break;
 
+                case "block":
+                case "b":
+                    if (parts.Length < 2)
+                    {
+                        //Console.WriteLine("Usage: block/b [URL]");
+                        return;
+                    }
+                    BlockURL(parts[1]);
+                    break;
+
+                case "unblock":
+                case "u":
+                    if (parts.Length < 2)
+                    {
+                        //Console.WriteLine("Usage: unblock/u [URL]");
+                        return;
+                    }
+                    UnblockURL(parts[1]);
+                    break;
+
+                
+                default:
+                    Console.WriteLine("Invalid command.");
+                    break;
+            }
         }
+
+        void ListBlockedURLs()
+        {
+            if (Globals.blockedURLS.Count == 0)
+            {
+                Console.WriteLine("No blocked URLs.");
+                return;
+            }
+
+            Console.WriteLine("Blocked URLs:");
+            foreach (string url in Globals.blockedURLS)
+            {
+                Console.WriteLine($"- {url}");
+            }
+        }
+
+        void BlockURL(string url)
+        {
+            Globals.blockedURLS.Add(url);
+            Console.WriteLine($"{url} has been blocked.");
+        }
+
+        void UnblockURL(string url)
+        {
+            if (Globals.blockedURLS.Remove(url))
+            {
+                Console.WriteLine($"{url} has been unblocked.");
+            }
+            else
+            {
+                Console.WriteLine($"{url} was not in the blocked list.");
+            }
+        }
+
     }
 }

@@ -13,7 +13,7 @@ using System.Collections.Concurrent;
 namespace WebProxy{
     public static class Globals
     {
-        public const Int32 PORT_NUMBER = 4000;
+        public static readonly Int32 PORT_NUMBER = 4000;
         public static readonly HttpClient httpClient = new HttpClient();
 
         public static Encoding ascii = Encoding.ASCII;
