@@ -177,10 +177,7 @@ namespace WebProxy{
                     {
                         url = "http://" + Globals.lastHost + url; 
                     }
-                    else{
-                        Uri uri = new Uri(url);
-                        Globals.lastHost = uri.Scheme + "://" + uri.Host; 
-                    }
+                   
                 HttpRequestMessage forwardRes = new HttpRequestMessage(new HttpMethod(method), url);
                 forwardRes.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36");
                 forwardRes.Headers.Add("Accept", "*/*");
@@ -313,7 +310,7 @@ namespace WebProxy{
 
         private static async Task PipeStream(NetworkStream source, NetworkStream destination)
         {
-            byte[] buffer = new byte[65536*2]; // Small buffer for efficient streaming
+            byte[] buffer = new byte[65536*4]; // Small buffer for efficient streaming
             Console.WriteLine("[INFO] PipeStream is running.");
             int bytesRead = 0;
             bytesRead = await source.ReadAsync(buffer, 0, buffer.Length);
