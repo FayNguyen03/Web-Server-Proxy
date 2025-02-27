@@ -20,14 +20,12 @@ namespace WebProxy{
             //accept client connections
             TcpListener listener = new TcpListener(IPAddress.Any, Globals.PORT_NUMBER);
             listener.Start();
-            Console.WriteLine($"Proxy Server started on port {Globals.PORT_NUMBER}");
+            
 
             while(true){
                 TcpClient client = listener.AcceptTcpClient();
                 ThreadPool.QueueUserWorkItem(state => HandleClient(client));
-                //Using threadpool can be more efficient since this reuses threads instead of creating a new thread/request
-                //Thread thread = new Thread(() => HandleClient(client));
-                //thread.Start();
+
                 
             }
         }
@@ -41,14 +39,11 @@ namespace WebProxy{
                 //Read the HTTP request
                 string requestLine = await reader.ReadLineAsync();
                 
-                Console.WriteLine($"[INFO]{requestLine}");
                 //Request is empty
                 if (string.IsNullOrEmpty(requestLine)){
                     ClosingClient(client);
                     return;
                 }
-
-                Console.WriteLine($"\nRequest Received: {requestLine}");
 
                 //Parse method and URL
                 string[] requestParts = requestLine.Split(' ');
@@ -66,17 +61,17 @@ namespace WebProxy{
                 if (url[0] == '/'){
                     url = url.Remove(0,1);
                 }
+            
                 if(!(url.StartsWith("http://") ||  url.StartsWith("https://")) ){
                     url = Globals.lastHost + "/" + url;
                 }
                 else{
-                    Uri uri = new Uri(url);
-                    Globals.lastHost = uri.Scheme + "://" + uri.Host;
+                    Globals.lastHost = url;
                 }
 
                 //Blocked URLs requested
                 if (Globals.blockedURLS.Contains(url)){
-                    Console.WriteLine($"Urgh Oh! {url} is blocked!");
+                    //Console.WriteLine($"Urgh Oh! {url} is blocked!");
                     string response = "HTTP/1.1 403 Forbidden";
                     //Convert the blocking message into bytes
                     byte[] responseBytes = Encoding.UTF8.GetBytes(response);    
@@ -86,13 +81,13 @@ namespace WebProxy{
                 }
 
                 //Print out method and URL on the console
-                Console.WriteLine($"Method: {method}");
-                Console.WriteLine($"URL: {url}");
+                //Console.WriteLine($"Method: {method}");
+                //Console.WriteLine($"URL: {url}");
             
                 bool cachedUrl = await CacheFetching(method, url, writer, clientStream);
                 if (cachedUrl){
                     ClosingClient(client);
-                    Console.WriteLine("[DEBUG] Cached Data Successfully!");
+                    //Console.WriteLine("[DEBUG] Cached Data Successfully!");
                     return;
                 }
 
@@ -106,17 +101,19 @@ namespace WebProxy{
                     await ForwardRequestToServer(method, url, clientStream, writer);
                 }
                 else{
-                    Console.WriteLine("[ERROR] Unsupported HTTP method.");
+                    //Console.WriteLine("[ERROR] Unsupported HTTP method.");
                     await writer.WriteLineAsync("HTTP/1.1 405 Method Not Allowed\r\n\r\n");
                 }
+                Console.WriteLine($"{requestLine} task is finished!");
                 await Task.Delay(100);
             }   
             }
             catch (Exception ex){
-                Console.WriteLine($"[ERROR] {ex.Message}");
+                //Console.WriteLine($"[ERROR] {ex.Message}");
             }
             
             finally{
+                
                 ClosingClient(client);
             
             }
@@ -135,7 +132,7 @@ namespace WebProxy{
 
                 int port = 443; 
 
-                Console.WriteLine($"[DEBUG] Extracted Host: {host}, Port: {port}");
+                //Console.WriteLine($"[DEBUG] Extracted Host: {host}, Port: {port}");
 
                 
                 using (TcpClient server = new TcpClient())
@@ -153,16 +150,16 @@ namespace WebProxy{
                     }
                     catch (SocketException se)
                     {
-                        Console.WriteLine($"[ERROR] Could not connect to {host}: {se.Message}");
+                        //Console.WriteLine($"[ERROR] Could not connect to {host}: {se.Message}");
                         await writer.WriteLineAsync("HTTP/1.1 502 Bad Gateway");
                     }
                 }
 
-                Console.WriteLine($"[DEBUG] HTTPS CONNECT succeeded");
+                //Console.WriteLine($"[DEBUG] HTTPS CONNECT succeeded");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] HTTPS CONNECT failed: {ex.Message}");
+                //Console.WriteLine($"[ERROR] HTTPS CONNECT failed: {ex.Message}");
                 await writer.WriteLineAsync("HTTP/1.1 502 Bad Gateway");
                 await writer.WriteLineAsync("Content-Type: text/plain");
                 await writer.WriteLineAsync();
@@ -190,18 +187,18 @@ namespace WebProxy{
                 byte[] responseBytes = await serverRes.Content.ReadAsByteArrayAsync();
                 Globals.end = DateTime.Now;
 
-                Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the server.");
+                Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the origin server.");
 
                 if (responseBytes != null){
                     Globals.cache[url] = (DateTime.Now, responseBytes);
-                    Console.WriteLine("[DEBUG] Add to Cache");
+                    //Console.WriteLine("[DEBUG] Add to Cache");
                 }
 
                 await pasteResponse(responseBytes, serverRes, clientStream, writer);
 
                 }
             catch (Exception ex){
-                Console.WriteLine($"Error forwarding request: {ex.Message}");
+                //Console.WriteLine($"Error forwarding request: {ex.Message}");
                 writer.WriteLine("HTTP/1.1 500 Internal Server Error");
                 writer.WriteLine("Content-Type: text/plain");
                 writer.WriteLine();
@@ -263,11 +260,11 @@ namespace WebProxy{
                     await clientStream.FlushAsync();
                 }
 
-                Console.WriteLine($"[INFO] Response forwarded successfully. Content-Type: {serverRes.Content.Headers.ContentType}");
+                //Console.WriteLine($"[INFO] Response forwarded successfully. Content-Type: {serverRes.Content.Headers.ContentType}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Error sending response: {ex.Message}");
+                //Console.WriteLine($"[ERROR] Error sending response: {ex.Message}");
                 await writer.WriteLineAsync("HTTP/1.1 500 Internal Server Error\r\n\r\n");
                 await writer.FlushAsync();
             }
@@ -304,33 +301,33 @@ namespace WebProxy{
         
         static async Task ClosingClient(TcpClient client){
             await Task.Delay(TimeSpan.FromMilliseconds(2));
-            Console.WriteLine($"\nClose the Client");
+            //Console.WriteLine($"\nClose the Client");
             client.Close();
         }
 
         private static async Task PipeStream(NetworkStream source, NetworkStream destination)
         {
             byte[] buffer = new byte[65536*4]; // Small buffer for efficient streaming
-            Console.WriteLine("[INFO] PipeStream is running.");
+            //Console.WriteLine("[INFO] PipeStream is running.");
             int bytesRead = 0;
             bytesRead = await source.ReadAsync(buffer, 0, buffer.Length);
-            Console.WriteLine(bytesRead);
+            //Console.WriteLine(bytesRead);
             try
             {
                 while ((bytesRead = await source.ReadAsync(buffer, 0, buffer.Length)) > 0)
                 {
-                    Console.WriteLine("[INFO] Getting Information.");
+                    //Console.WriteLine("[INFO] Getting Information.");
                     await destination.WriteAsync(buffer, 0, bytesRead);
                     await destination.FlushAsync();
                 }
             }
             catch (IOException)
             {
-                Console.WriteLine("[INFO] Connection closed.");
+                //Console.WriteLine("[INFO] Connection closed.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Streaming error: {ex.Message}");
+                //Console.WriteLine($"[ERROR] Streaming error: {ex.Message}");
             }
         }
     }
