@@ -66,6 +66,13 @@ namespace WebProxy{
                 if (url[0] == '/'){
                     url = url.Remove(0,1);
                 }
+                if(!(url.StartsWith("http://") ||  url.StartsWith("https://")) ){
+                    url = Globals.lastHost + "/" + url;
+                }
+                else{
+                    Uri uri = new Uri(url);
+                    Globals.lastHost = uri.Scheme + "://" + uri.Host;
+                }
 
                 //Blocked URLs requested
                 if (Globals.blockedURLS.Contains(url)){
@@ -102,11 +109,13 @@ namespace WebProxy{
                     Console.WriteLine("[ERROR] Unsupported HTTP method.");
                     await writer.WriteLineAsync("HTTP/1.1 405 Method Not Allowed\r\n\r\n");
                 }
+                await Task.Delay(100);
             }   
             }
             catch (Exception ex){
                 Console.WriteLine($"[ERROR] {ex.Message}");
             }
+            
             finally{
                 ClosingClient(client);
             
@@ -117,10 +126,9 @@ namespace WebProxy{
         {
             try
             {
-                //Console.WriteLine($"[DEBUG] {url}");
                 
                 string newUrl = url.Remove(0,8);
-                //Console.WriteLine($"[DEBUG] {newUrl}");
+                
                 string[] hostParts = newUrl.Split("/");
             
                 string host = hostParts[0]; 
@@ -161,10 +169,10 @@ namespace WebProxy{
                 await writer.WriteLineAsync("Proxy server error: Unable to connect to target server.");
             }
         }
-               
+
+         
         private static async Task ForwardRequestToServer(string method, string url, NetworkStream clientStream, StreamWriter writer){
             try{
-                    // **Fix: Construct Absolute URL for Requests That Start with "/" (like /favicon.ico)**
                     if (!url.StartsWith("http://") && !url.StartsWith("https://"))
                     {
                         url = "http://" + Globals.lastHost + url; 
@@ -174,17 +182,20 @@ namespace WebProxy{
                         Globals.lastHost = uri.Scheme + "://" + uri.Host; 
                     }
                 HttpRequestMessage forwardRes = new HttpRequestMessage(new HttpMethod(method), url);
+                forwardRes.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36");
+                forwardRes.Headers.Add("Accept", "*/*");
+                forwardRes.Headers.Add("Connection", "keep-alive");
+                forwardRes.Headers.Referrer = new Uri(url);
                 HttpResponseMessage serverRes = await Globals.httpClient.SendAsync(forwardRes);
 
                 //Response content 
                 Globals.start = DateTime.Now;
                 byte[] responseBytes = await serverRes.Content.ReadAsByteArrayAsync();
-                //Console.WriteLine(UTF8Encoding.UTF8.GetString(responseBytes));
                 Globals.end = DateTime.Now;
 
                 Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the server.");
 
-                if (responseBytes != null && url.StartsWith("http://")){
+                if (responseBytes != null){
                     Globals.cache[url] = (DateTime.Now, responseBytes);
                     Console.WriteLine("[DEBUG] Add to Cache");
                 }
@@ -200,39 +211,71 @@ namespace WebProxy{
                 writer.WriteLine("Proxy server error");
             }
         }     
-    
+
         private static async Task pasteResponse(byte[] responseBytes, HttpResponseMessage serverRes, NetworkStream clientStream, StreamWriter writer)
         {
             try
             {
-                // **Send HTTP status line**
-    
-                    
-                            await writer.WriteLineAsync($"HTTP/{serverRes.Version} {(int)serverRes.StatusCode} {serverRes.ReasonPhrase}");
-                            if (serverRes.Content.Headers.ContentType != null)
-                            {
-                                await writer.WriteLineAsync($"Content-Type 1: {serverRes.Content.Headers.ContentType}");
-                            }
-                            //Send response headers
-                            foreach (var header in serverRes.Headers){
-                            
-                                await writer.WriteLineAsync($"{header.Key}: {string.Join(", ", header.Value)}");
-                            }
+                
+                await writer.WriteLineAsync($"HTTP/{serverRes.Version} {(int)serverRes.StatusCode} {serverRes.ReasonPhrase}");
 
-                            await writer.WriteLineAsync();
-                            await writer.FlushAsync();
+                
+                if (serverRes.Content.Headers.ContentType != null)
+                {
+                    await writer.WriteLineAsync($"Content-Type: {serverRes.Content.Headers.ContentType}");
+                }
+            
 
-                            await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
-                        }
-                        catch (Exception ex)
+                foreach (var header in serverRes.Headers)
+                {
+                    await writer.WriteLineAsync($"{header.Key}: {string.Join(", ", header.Value)}");
+                }
+
+                
+                if (serverRes.Headers.TransferEncodingChunked.HasValue && serverRes.Headers.TransferEncodingChunked.Value)
+                {
+                    await writer.WriteLineAsync("Transfer-Encoding: chunked");
+                }
+
+                await writer.WriteLineAsync();
+                await writer.FlushAsync();
+
+                if (serverRes.Headers.TransferEncodingChunked.HasValue && serverRes.Headers.TransferEncodingChunked.Value)
+                {
+                    using (var responseStream = await serverRes.Content.ReadAsStreamAsync())
+                    {
+                        byte[] buffer = new byte[65536]; 
+                        int bytesRead;
+                        
+                        while ((bytesRead = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                         {
-                            Console.WriteLine($"Error sending response to the client server: {ex.Message}");
-                            await writer.WriteLineAsync("HTTP/1.1 500 Internal Server Error");
-                            await writer.WriteLineAsync("Content-Type: text/plain");
-                            await writer.WriteLineAsync();
-                            await writer.WriteLineAsync("Proxy server error");
+                            string chunkSize = $"{bytesRead:X}\r\n"; 
+                            await writer.WriteLineAsync(chunkSize);
+                            await clientStream.WriteAsync(buffer, 0, bytesRead);
+                            await writer.WriteLineAsync("\r\n"); 
                         }
+
+                        // **Step 7: Send final empty chunk (signaling end of chunked response)**
+                        await writer.WriteLineAsync("0\r\n\r\n");
+                    }
+                }
+                else
+                {
+                   
+                    await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+                    await clientStream.FlushAsync();
+                }
+
+                Console.WriteLine($"[INFO] Response forwarded successfully. Content-Type: {serverRes.Content.Headers.ContentType}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Error sending response: {ex.Message}");
+                await writer.WriteLineAsync("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+                await writer.FlushAsync();
+            }
         }
+
         
         static async Task<bool> CacheFetching(string method, string url, StreamWriter writer, NetworkStream clientStream){
             //Check Cache before Fetching
