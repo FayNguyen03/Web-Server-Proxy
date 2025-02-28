@@ -211,61 +211,59 @@ namespace WebProxy{
         {
             try
             {
-                
                 await writer.WriteLineAsync($"HTTP/{serverRes.Version} {(int)serverRes.StatusCode} {serverRes.ReasonPhrase}");
 
-                
                 if (serverRes.Content.Headers.ContentType != null)
                 {
                     await writer.WriteLineAsync($"Content-Type: {serverRes.Content.Headers.ContentType}");
                 }
-            
 
                 foreach (var header in serverRes.Headers)
                 {
                     await writer.WriteLineAsync($"{header.Key}: {string.Join(", ", header.Value)}");
                 }
 
-                
+                // Handle chunked encoding explicitly
                 if (serverRes.Headers.TransferEncodingChunked.HasValue && serverRes.Headers.TransferEncodingChunked.Value)
                 {
                     await writer.WriteLineAsync("Transfer-Encoding: chunked");
-                }
+                    await writer.WriteLineAsync(); 
+                    await writer.FlushAsync();
 
-                await writer.WriteLineAsync();
-                await writer.FlushAsync();
-
-                if (serverRes.Headers.TransferEncodingChunked.HasValue && serverRes.Headers.TransferEncodingChunked.Value)
-                {
                     using (var responseStream = await serverRes.Content.ReadAsStreamAsync())
                     {
-                        byte[] buffer = new byte[65536]; 
+                        byte[] buffer = new byte[8192]; 
                         int bytesRead;
-                        
+
                         while ((bytesRead = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                         {
-                            string chunkSize = $"{bytesRead:X}\r\n"; 
-                            await writer.WriteLineAsync(chunkSize);
+                            await writer.WriteAsync($"{bytesRead:X}\r\n");
                             await clientStream.WriteAsync(buffer, 0, bytesRead);
-                            await writer.WriteLineAsync("\r\n"); 
+                            await clientStream.WriteAsync(Encoding.ASCII.GetBytes("\r\n"), 0, 2);
+                            await clientStream.FlushAsync();
                         }
 
-                        // **Step 7: Send final empty chunk (signaling end of chunked response)**
-                        await writer.WriteLineAsync("0\r\n\r\n");
+                        await writer.WriteAsync("0\r\n\r\n");
+                        await clientStream.FlushAsync();
                     }
                 }
                 else
                 {
-                   
+                    // Non-chunked response:
+                    if (serverRes.Content.Headers.ContentLength.HasValue)
+                    {
+                        await writer.WriteLineAsync($"Content-Length: {serverRes.Content.Headers.ContentLength.Value}");
+                    }
+                    await writer.WriteLineAsync(); 
+                    await writer.FlushAsync();
+
                     await clientStream.WriteAsync(responseBytes, 0, responseBytes.Length);
                     await clientStream.FlushAsync();
                 }
-
-                //Console.WriteLine($"[INFO] Response forwarded successfully. Content-Type: {serverRes.Content.Headers.ContentType}");
             }
             catch (Exception ex)
             {
-                //Console.WriteLine($"[ERROR] Error sending response: {ex.Message}");
+                Console.WriteLine($"[ERROR] Error sending response: {ex.Message}");
                 await writer.WriteLineAsync("HTTP/1.1 500 Internal Server Error\r\n\r\n");
                 await writer.FlushAsync();
             }
