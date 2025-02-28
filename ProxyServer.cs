@@ -144,7 +144,7 @@ namespace WebProxy{
                         {
                             await writer.WriteLineAsync("HTTP/1.1 200 Connection Established\r\n\r\n");
                             await writer.FlushAsync();
-                            Console.WriteLine($"[INFO] HTTPS Tunnel Established to {host}:{port}");
+                            //Console.WriteLine($"[INFO] HTTPS Tunnel Established to {host}:{port}");
                             await Task.WhenAny(PipeStream(clientStream, serverStream), PipeStream(serverStream, clientStream));
                         }
                     }
@@ -185,9 +185,9 @@ namespace WebProxy{
                 //Response content 
                 Globals.start = DateTime.Now;
                 byte[] responseBytes = await serverRes.Content.ReadAsByteArrayAsync();
-                Globals.end = DateTime.Now;
+                
 
-                Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the origin server.");
+                
 
                 if (responseBytes != null){
                     Globals.cache[url] = (DateTime.Now, responseBytes);
@@ -195,7 +195,8 @@ namespace WebProxy{
                 }
 
                 await pasteResponse(responseBytes, serverRes, clientStream, writer);
-
+                Globals.end = DateTime.Now;
+                Console.WriteLine($"[TIMING] {url} took {(Globals.end - Globals.start).TotalMilliseconds} ms to fetch from the origin server.");
                 }
             catch (Exception ex){
                 //Console.WriteLine($"Error forwarding request: {ex.Message}");
@@ -278,9 +279,9 @@ namespace WebProxy{
             }
             HttpRequestMessage forwardRes = new HttpRequestMessage(new HttpMethod(method), url);
             HttpResponseMessage serverRes = await Globals.httpClient.SendAsync(forwardRes);
-
+            Globals.start = DateTime.Now;
                 if (method == "GET" && Globals.cache.ContainsKey(url)){
-                    Globals.start = DateTime.Now;
+                    
                     var (timestamp, cachedData) = Globals.cache[url];
 
                     //Expire cache after 1 minute
